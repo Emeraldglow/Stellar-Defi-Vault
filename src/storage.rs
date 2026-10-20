@@ -1,5 +1,38 @@
 use soroban_sdk::{contracttype, Address, String, Vec, Env, Symbol, symbol_short};
 
+/// Consolidated per-user settings (issue #796).
+///
+/// Stores all user preferences in a single storage entry to reduce rent costs.
+/// Uses versioned-enum pattern so new settings can be added later.
+///
+/// - `version`: struct version for future migrations
+/// - `claim_destination`: address to receive claimed rewards (None = self)
+/// - `auto_compound`: whether to automatically compound rewards
+/// - `keepers`: list of addresses authorized to act on behalf of user
+/// - `notifications_enabled`: whether user wants notifications
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct UserSettings {
+    pub version: u32,
+    pub claim_destination: Option<Address>,
+    pub auto_compound: bool,
+    pub keepers: Vec<Address>,
+    pub notifications_enabled: bool,
+}
+
+impl UserSettings {
+    /// Create default settings for a new user.
+    pub fn default() -> Self {
+        Self {
+            version: 1,
+            claim_destination: None,
+            auto_compound: false,
+            keepers: Vec::new(&soroban_sdk::Env::default()),
+            notifications_enabled: true,
+        }
+    }
+}
+
 /// Storage keys for all persistent and instance state in the vault.
 ///
 /// Instance keys (fast, small): Admin, Token, TotalShares, TotalDeposited,

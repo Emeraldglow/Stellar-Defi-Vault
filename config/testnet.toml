@@ -1,0 +1,43 @@
+# Stellar DeFi Vault - Testnet Configuration
+# This file defines the initial parameters for testnet deployment.
+
+[network]
+name = "testnet"
+rpc_url = "https://soroban-testnet.stellar.org"
+horizon_url = "https://horizon-testnet.stellar.org"
+network_passphrase = "Test SDF Network ; September 2015"
+
+[contract]
+# Token contract address (USDC on testnet)
+token_address = "CBIELNK6Q7UC6VGPQ5RBRVHY5TZGSGHY5XKGRPBTVTTBR5OJQXGCN6HJ5"
+
+[vault]
+# Fee parameters (in basis points, 1 = 0.01%)
+management_fee_bps = 20        # 0.2% annual management fee
+performance_fee_bps = 200      # 2% performance fee
+withdrawal_fee_bps = 10        # 0.1% withdrawal fee
+
+# Rate parameters (in basis points)
+base_yield_rate_bps = 500      # 5% base yield
+bonus_yield_rate_bps = 200     # 2% bonus yield
+
+# Caps (in token smallest unit, e.g., stroops for XLM)
+max_deposit_cap = 1000000000000  # 100,000 tokens
+max_withdrawal_cap = 100000000000 # 10,000 tokens per withdrawal
+min_deposit_amount = 10000000     # 1 token minimum deposit
+
+[admin]
+# Admin addresses (first is primary admin)
+admin_addresses = [
+  "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN",
+]
+
+# Keeper addresses (optional)
+keeper_addresses = []
+
+[security]
+# Emergency pause threshold (number of admins required to pause)
+pause_threshold = 1
+
+# Max daily withdrawal limit
+max_daily_withdrawal = 50000000000  # 5,000 tokens
