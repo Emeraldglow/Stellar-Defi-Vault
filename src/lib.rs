@@ -63,6 +63,7 @@ pub mod staker_network_graph; // issue #456 — staker delegation/referral/mirro
 pub mod time_locked_admin_proposal; // issue #455 -- time-locked admin config-change announcements
 pub mod vault_extensions_463_466; // issues #463-#466 — clawback, NFT boost, milestone, param log
 pub mod vault_extensions_761_764; // issues #761-#764 — proposal categories, expedited proposals, delegation expiry, strategy adapters
+pub mod vault_extensions_792_795; // issues #792-#795 — reward decimals, funder attribution, treasury rate limit, surplus rescue
 pub mod vesting_cliff; // issue #287 — reward vesting cliff // reward-token price peg stabilization
 
 pub use nft::StakeReceiptNFT;
