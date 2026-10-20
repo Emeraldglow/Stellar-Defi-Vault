@@ -100,6 +100,31 @@ jobs:
           fi
           echo "OK: Wasm size ${size} bytes is within budget ${budget} bytes."
 
+  snapshot-hygiene:
+    name: Snapshot hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.94.0
+      - name: Run tests (generates snapshots locally)
+        run: cargo test --features testutils
+      # Fail if any test_snapshots/ file was committed or is now tracked.
+      # The directory is gitignored (see .gitignore and docs/TEST_SNAPSHOTS.md);
+      # this step ensures no file slips through into the index.
+      - name: Assert no committed snapshot files
+        run: |
+          set -euo pipefail
+          committed=$(git ls-files test_snapshots/ 2>/dev/null || true)
+          if [ -n "$committed" ]; then
+            echo "::error::Committed test_snapshots/ files found:"
+            echo "$committed"
+            echo "Remove them with: git rm -r --cached test_snapshots/"
+            echo "See docs/TEST_SNAPSHOTS.md for the snapshot hygiene policy."
+            exit 1
+          fi
+          echo "OK: no committed snapshot files."
+
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
