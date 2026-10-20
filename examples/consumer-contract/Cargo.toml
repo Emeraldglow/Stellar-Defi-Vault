@@ -1,0 +1,18 @@
+[package]
+name = "consumer-contract"
+version = "0.1.0"
+edition = "2021"
+description = "Example Soroban contract that integrates with the Stellar DeFi Vault"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+testutils = ["soroban-sdk/testutils", "stellar-defi-vault/testutils"]
+
+[dependencies]
+soroban-sdk = { version = "=29.0.1" }
+
+[dev-dependencies]
+soroban-sdk = { version = "=29.0.1", features = ["testutils"] }
+stellar-defi-vault = { path = "../..", features = ["testutils"] }

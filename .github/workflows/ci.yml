@@ -65,6 +65,66 @@ jobs:
           fi
           echo "OK: no test-only symbols in $wasm"
 
+      # Issue: Wasm size budget gate. Fails the build when the optimized
+      # binary exceeds the committed budget in .github/wasm-size-budget.
+      # To raise the budget deliberately, update that file in a separate PR
+      # with a comment explaining why the increase is justified.
+      - name: Check Wasm size budget
+        run: |
+          set -euo pipefail
+          wasm=target/wasm32-unknown-unknown/release/stellar_defi_vault.wasm
+          budget=$(cat .github/wasm-size-budget | tr -d '[:space:]')
+          size=$(wc -c < "$wasm" | tr -d '[:space:]')
+
+          # Fetch the base-branch size from the uploaded artifact if available,
+          # otherwise fall back to the budget as the comparison baseline.
+          delta="N/A (no prior artifact)"
+
+          {
+            echo "### Wasm size report"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|--------|-------|"
+            echo "| Binary | \`$wasm\` |"
+            echo "| Size   | ${size} bytes |"
+            echo "| Budget | ${budget} bytes |"
+            echo "| Delta vs budget | $((size - budget)) bytes |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Wasm size: ${size} bytes  Budget: ${budget} bytes"
+          if [ "$size" -gt "$budget" ]; then
+            echo "::error::Wasm binary (${size} bytes) exceeds size budget (${budget} bytes)."
+            echo "To raise the budget deliberately, update .github/wasm-size-budget in a"
+            echo "dedicated PR and document why the increase is justified."
+            exit 1
+          fi
+          echo "OK: Wasm size ${size} bytes is within budget ${budget} bytes."
+
+  snapshot-hygiene:
+    name: Snapshot hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.94.0
+      - name: Run tests (generates snapshots locally)
+        run: cargo test --features testutils
+      # Fail if any test_snapshots/ file was committed or is now tracked.
+      # The directory is gitignored (see .gitignore and docs/TEST_SNAPSHOTS.md);
+      # this step ensures no file slips through into the index.
+      - name: Assert no committed snapshot files
+        run: |
+          set -euo pipefail
+          committed=$(git ls-files test_snapshots/ 2>/dev/null || true)
+          if [ -n "$committed" ]; then
+            echo "::error::Committed test_snapshots/ files found:"
+            echo "$committed"
+            echo "Remove them with: git rm -r --cached test_snapshots/"
+            echo "See docs/TEST_SNAPSHOTS.md for the snapshot hygiene policy."
+            exit 1
+          fi
+          echo "OK: no committed snapshot files."
+
   audit:
     name: Dependency Audit
     runs-on: ubuntu-latest

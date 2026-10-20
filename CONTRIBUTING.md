@@ -68,6 +68,19 @@ The compiled `.wasm` file will be at `target/wasm32-unknown-unknown/release/stel
 - Update `COSTS.md` with benchmarked CPU instructions and memory consumption for any new public functions.
 - Keep `CONTRACT_VERSION` in sync with `Cargo.toml` when updating the contract version.
 
+## Test Snapshots
+
+Soroban writes JSON snapshot files to `test_snapshots/` when tests run. This
+directory is listed in `.gitignore` and **must never be committed**. See
+[`docs/TEST_SNAPSHOTS.md`](docs/TEST_SNAPSHOTS.md) for the full policy and
+CI enforcement details.
+
+If you accidentally stage snapshot files, remove them with:
+
+```bash
+git rm -r --cached test_snapshots/
+```
+
 ## PR Checklist
 
 Opening a pull request pre-fills
