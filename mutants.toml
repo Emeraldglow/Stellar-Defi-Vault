@@ -1,0 +1,29 @@
+# cargo-mutants configuration (issue #662).
+#
+# Mutation testing is scoped to the core accounting modules so a single run
+# stays within a reasonable time budget. The rest of the crate is a large set of
+# feature modules; mutating them all would take many hours and is better left to
+# the per-feature test suites.
+
+# Only mutate the modules the accounting invariants live in
+# (docs/INVARIANTS.md).
+examine_globs = [
+    "src/balance.rs",
+    "src/invariants.rs",
+]
+
+# Never mutate test code or fixtures.
+exclude_globs = [
+    "src/test*.rs",
+]
+
+# The crate's tests only compile with the `testutils` feature; without it the
+# per-mutant `cargo test` invocation would not build.
+additional_cargo_test_args = ["--features", "testutils"]
+
+# Keep the report self-contained for the scheduled workflow artifact.
+output_dir = "target/mutants"
+
+# Per-test timeout in seconds. The full suite is fast, but a mutant that breaks
+# a loop guard could otherwise hang the run.
+timeout = 120

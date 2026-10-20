@@ -14,13 +14,26 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 testutils = ["soroban-sdk/testutils"]
+vault-wasm = []
 
 [dependencies]
-soroban-sdk = { version = "=21.4.0" }
+soroban-sdk = { version = "=29.0.1" }
 
 [dev-dependencies]
-soroban-sdk = { version = "=21.4.0", features = ["testutils"] }
+proptest = "1.6.0"
+soroban-sdk = { version = "=29.0.1", features = ["testutils"] }
 
+# Release profile for deployed Soroban contracts (issue #657).
+#
+# Soroban's VM traps on overflow, but a `wasm32-unknown-unknown` build compiled
+# with `overflow-checks = false` turns the receiver's arithmetic into a trap
+# at the wrong layer / with the wrong error, and can silently wrap in code
+# paths that use `+`/`*` directly. Keep the checks on for every optimised
+# build, including `lto = true` builds.
+#
+# `opt-level = "z"` keeps the Wasm under Soroban's size limits; `panic = "abort"`
+# avoids unwinding machinery that cannot run inside the VM. Do not relax these
+# settings without also updating `src/test_release_profile.rs`.
 [profile.release]
 opt-level = "z"
 overflow-checks = true

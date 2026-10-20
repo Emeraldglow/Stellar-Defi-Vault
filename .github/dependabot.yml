@@ -1,0 +1,47 @@
+# Automated dependency update PRs (#683).
+#
+# - Weekly updates for Rust crates (Cargo) and GitHub Actions.
+# - soroban-* crates get their own group so an SDK bump is never mixed into a
+#   routine update: SDK bumps can change contract behaviour. The
+#   dependabot-review workflow labels those PRs `needs-manual-review`.
+# - Labels are left to Dependabot's defaults (dependencies + rust /
+#   github_actions), which it creates automatically; custom labels would have
+#   to exist in the repo first.
+# - Nothing auto-merges. Every Dependabot PR targets main, so the CI workflow
+#   runs on it and must pass (enforce via branch protection on main).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      soroban-sdk:
+        patterns:
+          - "soroban-*"
+      rust-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "soroban-*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    ignore:
+      # The ref *is* the Rust toolchain version (1.94.0); bumping it changes the
+      # compiler, which should be a deliberate change alongside rust-toolchain.toml.
+      - dependency-name: "dtolnay/rust-toolchain"

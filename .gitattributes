@@ -1,0 +1,3 @@
+# Shell scripts must use LF: with CRLF, bash reads `set -euo pipefail\r` and
+# aborts with "invalid option" on Linux/CI (#669).
+*.sh text eol=lf

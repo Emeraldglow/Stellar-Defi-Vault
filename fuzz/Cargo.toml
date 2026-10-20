@@ -1,0 +1,34 @@
+[package]
+name = "stellar-defi-vault-fuzz"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+# cargo-fuzz reads this to know the layout is a fuzz crate.
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# The `testutils` feature exposes `stellar_defi_vault::fuzz_support`, the pure
+# share-conversion and reward-math surfaces these targets exercise (issue #661).
+stellar-defi-vault = { path = "..", features = ["testutils"] }
+
+# Required so a bare `cargo check --manifest-path fuzz/Cargo.toml` works without
+# the full fuzz harness; each target is a libFuzzer binary.
+[[bin]]
+name = "share_conversion"
+path = "fuzz_targets/share_conversion.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "reward_calculation"
+path = "fuzz_targets/reward_calculation.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

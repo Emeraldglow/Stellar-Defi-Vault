@@ -1,0 +1,20 @@
+{
+  "name": "Stellar DeFi Vault",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "RUST_TOOLCHAIN": "1.94.0",
+      "STELLAR_CLI_VERSION": "28.1.0"
+    }
+  },
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer", "tamasfe.even-better-toml"]
+    }
+  },
+  "postCreateCommand": "rustc --version && cargo --version && stellar --version && rustup target list --installed",
+  "mounts": [
+    "source=stellar-defi-vault-cargo-registry,target=/usr/local/cargo/registry,type=volume"
+  ]
+}

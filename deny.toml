@@ -1,0 +1,7 @@
+[advisories]
+version = 2
+ignore = [
+	{ id = "RUSTSEC-2025-0056", reason = "Transitive through soroban-sdk 21.7.7 host backtrace dependencies; cargo-deny reports no safe upgrade. Vault maintainers must reassess the SDK path by 2026-12-31." },
+	{ id = "RUSTSEC-2024-0436", reason = "Transitive through soroban-sdk 21.7.7's Soroban Wasmi dependency; cargo-deny reports no safe upgrade. Vault maintainers must reassess the SDK path by 2026-12-31." },
+	{ crate = "spin@0.9.8", reason = "Yanked transitive version pinned through soroban-sdk 21.7.7's Soroban Wasmi dependency. Vault maintainers must reassess the SDK path by 2026-12-31." },
+]

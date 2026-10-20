@@ -1,4 +1,7 @@
 #!/usr/bin/env sh
+# POSIX sh script: `pipefail` is not part of POSIX (dash rejects it), so this
+# uses `set -eu`. Its pipelines only feed printf output through sed/tr, which
+# can't fail independently (#669).
 set -eu
 
 DECIMALS=10000000

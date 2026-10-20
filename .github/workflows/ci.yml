@@ -14,15 +14,13 @@ jobs:
     name: Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+        uses: dtolnay/rust-toolchain@1.94.0
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -33,15 +31,59 @@ jobs:
       - name: Run tests
         run: cargo test --features testutils
 
-      - name: Build WASM release
-        run: cargo build --target wasm32-unknown-unknown --release
+  wasm:
+    name: WASM Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Build optimized vault WASM
+        run: cargo build --target wasm32-unknown-unknown --release --features vault-wasm
+      - name: Upload optimized vault WASM
+        uses: actions/upload-artifact@v7
+        with:
+          name: stellar-defi-vault-wasm
+          path: target/wasm32-unknown-unknown/release/stellar_defi_vault.wasm
+          if-no-files-found: error
+
+      # Issue #658: the deployed artifact must be built without `testutils`, and
+      # must not contain any test-only symbols. `testutils` is not a default
+      # feature, so a plain release build is the guarantee.
+      - name: Build release WASM without testutils
+        run: cargo build --target wasm32-unknown-unknown --release --no-default-features
+
+      - name: Assert no test-only symbols in the release WASM
+        run: |
+          set -euo pipefail
+          wasm=target/wasm32-unknown-unknown/release/stellar_defi_vault.wasm
+          if strings "$wasm" | grep -iE 'testutils|__test_|test_fixture|test_issues_'; then
+            echo "::error::test-only symbols found in the release WASM"
+            exit 1
+          fi
+          echo "OK: no test-only symbols in $wasm"
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: Check dependency advisories
+        run: cargo deny check advisories
 
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
         with:
           components: rustfmt
       - run: cargo fmt --check
@@ -50,9 +92,112 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
         with:
           components: clippy
           targets: wasm32-unknown-unknown
-      - run: cargo clippy --features testutils -- -D warnings
+      # `missing_docs` is tracked by the `docs` job below while the backlog is
+      # worked through (#675); keep it out of clippy's -D warnings until then.
+      - run: cargo clippy --all-targets -- -D warnings -A missing_docs
+
+  docs:
+    name: Rustdoc
+    runs-on: ubuntu-latest
+    env:
+      # Broken intra-doc links fail the build now; missing_docs is reported
+      # but not yet fatal (#675). Add `-D missing_docs` once the count is 0.
+      RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Build docs
+        run: cargo doc --no-deps --lib 2>&1 | tee rustdoc.log
+        shell: bash -o pipefail {0}
+      - name: Report undocumented public items
+        if: always()
+        run: |
+          count=$(grep -c "missing documentation" rustdoc.log || true)
+          echo "### Undocumented public items: ${count}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Undocumented public items: ${count}"
+
+  # Line/branch coverage on every PR (issue #663). The summary is written to the
+  # step summary so it is visible on the PR, and the measured total is enforced
+  # against .github/coverage-threshold (no-regression floor).
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: llvm-tools-preview
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-coverage-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # Tests only compile with `testutils`; without it coverage is reported for
+      # a crate that does not build its test binaries. See docs/COVERAGE.md.
+      - name: Measure coverage
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --features testutils --lcov --output-path lcov.info
+          cargo llvm-cov report --summary-only | tee coverage.txt
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          {
+            echo "### Code coverage"
+            echo
+            echo '```'
+            cat coverage.txt 2>/dev/null || echo "no coverage report produced"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Enforce no-regression threshold
+        run: |
+          threshold=$(cat .github/coverage-threshold)
+          echo "Enforcing line-coverage floor: ${threshold}%"
+          cargo llvm-cov report --fail-under-lines "${threshold}"
+      - name: Upload lcov report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          if-no-files-found: warn
+
+  # Scout static analysis on every PR (issue #664). Fails on any high-severity
+  # finding that is not triaged in .github/scout-triage.json.
+  scout:
+    name: Scout static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Install Scout
+        # Pinned deliberately: the detector toolchain is a pinned nightly and the
+        # finding set can change between releases. Bump and re-triage together.
+        run: cargo install cargo-scout-audit --locked --version 0.3.17
+      - name: Run Scout
+        # Scout exits non-zero when it finds issues; triage decides what is
+        # blocking, so keep the report step from failing early.
+        run: SCOUT_OFFLINE=1 cargo scout-audit --output-format sarif,md || true
+      - name: Triage findings
+        run: python3 .github/scripts/scout_triage.py scout.sarif
+      - name: Upload Scout reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: scout-report
+          path: |
+            **/*.sarif
+            scout.*
+          if-no-files-found: warn

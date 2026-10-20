@@ -24,6 +24,22 @@ Flips the `Paused` flag back to `false`.
 
 **Emits:** `unpaused` event with the admin address.
 
+### `enter_withdraw_only_mode(admin)` / `exit_withdraw_only_mode(admin)`
+
+Switches the pool into, and back out of, withdraw-only mode.
+
+**Effect:** While active, deposits, staking, compounding, locking and reward auto-restake are rejected, while withdrawals and claims stay open and their fees are waived. Unlike `pause()`, user funds are never frozen. Unlike `initiate_sunset()`, the mode is immediate, has no deadline and can be reversed by the admin. `get_pool_mode()` reports `Normal`, `Paused` or `WithdrawOnly`.
+
+**Emits:** `wd_only` event with the admin address, the new state and the ledger sequence.
+
+### `set_dust_threshold(admin, amount)` / `set_dust_keeper_tip_bps(admin, bps)` / `set_dust_treasury(admin, treasury)`
+
+Configure dust cleanup. A keeper may call `close_dust_position(keeper, user)` for a position worth less than the threshold, without the owner's signature.
+
+**Effect:** The position's whole value is paid to the owner (or to the dust treasury if one is set), less a keeper tip capped at 10%. Locked positions cannot be closed, and accrued rewards stay claimable by the owner.
+
+**Emits:** `dust_clos` event with the amount paid out, the keeper tip and the ledger sequence.
+
 ### `add_yield(admin_addr, amount)`
 
 Transfers `amount` tokens **from the admin's own wallet** into the vault contract, then increments `total_deposited` by the same amount without minting new shares.
@@ -32,7 +48,7 @@ Transfers `amount` tokens **from the admin's own wallet** into the vault contrac
 
 **Emits:** `yield_add` event with the admin address and the amount added.
 
-**Key constraint:** The admin is sending their own tokens *into* the vault, not extracting anything from it. This function cannot be used to remove user principal.
+**Key constraint:** The admin is sending their own tokens _into_ the vault, not extracting anything from it. This function cannot be used to remove user principal.
 
 ### `rescue_token(admin_addr, token, amount, recipient)`
 
@@ -82,6 +98,72 @@ The `Token` key is written once during `initialize` and there is no setter for i
 
 ---
 
+## Shutdown Modes
+
+The vault has three distinct shutdown mechanisms. They differ in reversibility, scope, and intended use case.
+
+### `pause()` / `unpause()` — reversible, blocks all activity
+
+**Trigger:** Admin calls `pause()`.
+
+**Effect:** Both `stake` and `unstake` revert with `VaultError::VaultPaused` (error code 6). `claim` and `withdraw_vested` are also blocked. No funds move.
+
+**Reversible:** Yes. The admin can call `unpause()` at any time to restore full operation.
+
+**Storage flag:** `DataKey::Paused` in instance storage.
+
+**Intended use:** Routine maintenance, emergency hotfix window, or any situation where the admin needs a brief freeze with the intent to resume.
+
+---
+
+### `start_graceful_shutdown()` — irreversible, blocks new stakes only
+
+**Trigger:** Admin calls `start_graceful_shutdown()`.
+
+**Effect:** Any new call to `stake` or `stake_with_referral` reverts with `VaultError::PoolShuttingDown` (error code 45). Existing stakers are unaffected: `unstake`, `claim`, and `withdraw_vested` all continue to work normally. The pool winds down naturally as current positions exit.
+
+**Reversible:** No. The `ShuttingDown` flag is set to `true` and there is no function to clear it.
+
+**Coexistence:** Graceful shutdown and pause are independent flags. Both can be active simultaneously without conflict.
+
+**Storage flag:** `DataKey::ShuttingDown` in instance storage.
+
+**Event emitted:** `shutdown_started` — contains the admin address and the ledger sequence at which shutdown began.
+
+**Intended use:** Planned end-of-life for the pool. Lets existing participants exit at their own pace without forcing anything. No funds are lost; every staker can retrieve their principal and accrued rewards.
+
+**Query:** `is_shutting_down(env) -> bool` — read-only, no auth required.
+
+---
+
+### `emergency_stop()` — irreversible, blocks stake permanently
+
+**Trigger:** Admin calls `emergency_stop()`.
+
+**Effect:** `stake` and `stake_with_referral` revert with `VaultError::ContractStopped` (error code 9). Unlike graceful shutdown, `pause`/`unpause` also revert with `ContractStopped` once this flag is set — the contract cannot be paused or unpaused after an emergency stop. `unstake` and `claim` continue to work.
+
+**Reversible:** No.
+
+**Storage flag:** `DataKey::Stopped` in instance storage.
+
+**Event emitted:** `stopped` — contains the admin address.
+
+**Intended use:** Critical security incident where the admin needs to immediately and permanently prevent any new capital from entering the pool. Existing stakers can still exit.
+
+**Query:** `is_stopped(env) -> bool` — read-only, no auth required.
+
+---
+
+### Comparison table
+
+| Mode                      | Blocks stake | Blocks unstake/claim | Reversible | Event              |
+| ------------------------- | ------------ | -------------------- | ---------- | ------------------ |
+| `pause`                   | Yes          | Yes                  | Yes        | `paused`           |
+| `start_graceful_shutdown` | Yes          | No                   | No         | `shutdown_started` |
+| `emergency_stop`          | Yes          | No                   | No         | `stopped`          |
+
+---
+
 ## Failure Scenarios
 
 ### Vault is paused
@@ -93,6 +175,7 @@ Self::require_not_paused(&env)?;
 ```
 
 If paused:
+
 - Deposits return `VaultError::VaultPaused`. No tokens are moved.
 - Withdrawals return `VaultError::VaultPaused`. User principal stays in the vault contract.
 - User share balances are unchanged — they continue to represent the same ownership fraction.
@@ -123,6 +206,7 @@ Share minting and redemption use `checked_mul` / `checked_div`. On failure these
 ### Admin key compromise
 
 If the admin key is compromised, an attacker can:
+
 - Pause the vault (freezing user withdrawals).
 - Call `add_yield` with a zero-value amount (no effect due to `amount <= 0` guard).
 - Transfer admin to another address, locking out the legitimate admin.
@@ -149,3 +233,9 @@ This is a single-step, irreversible operation. The current admin loses authority
 ## Audit Status
 
 This contract is unaudited. Do not use in production without an independent security audit. If you discover a vulnerability, please open a private [GitHub Security Advisory](../../security/advisories/new) rather than a public issue.
+
+## Dependency Advisory Triage
+
+CI runs `cargo deny check advisories` against `Cargo.lock` on every pull request. Resolve reported advisories by updating the affected dependency and reviewing the resulting lockfile changes. If an advisory is accepted temporarily, add its RustSec ID to `deny.toml` under `[advisories].ignore` as an object with a `reason`. The accompanying pull request must explain why the affected code is not exploitable here or why immediate remediation is impractical, identify the planned remediation and owner, and set a review date. Reassess every exception when dependencies change and remove it as soon as the risk is resolved; do not add blanket ignores.
+
+Current exceptions are limited to the `adler` and `paste` unmaintained advisories and the yanked `spin 0.9.8`, all pulled in through Soroban SDK 21.7.7 host dependencies. The advisory database reports no safe upgrades for the two unmaintained crates. The vault maintainers must reassess these entries by 2026-12-31, including when the Soroban SDK dependency is upgraded.

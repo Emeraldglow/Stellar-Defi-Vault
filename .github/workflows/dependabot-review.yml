@@ -1,0 +1,39 @@
+name: Dependabot review gate
+
+# Flags Dependabot PRs that bump soroban-* crates for manual review (#683).
+# SDK bumps can change contract behaviour, so they must never be auto-merged.
+#
+# pull_request_target is used only so the job can label the PR (Dependabot's
+# pull_request token is read-only). It never checks out or runs PR code.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  label-soroban-bumps:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Label soroban-sdk bumps for manual review
+        if: contains(steps.meta.outputs.dependency-names, 'soroban-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh label create needs-manual-review --repo "$REPO" --color B60205 \
+            --description "Dependency bump that can change contract behaviour; do not auto-merge" \
+            2>/dev/null || true
+          gh pr edit "$PR" --repo "$REPO" --add-label needs-manual-review
+          gh pr comment "$PR" --repo "$REPO" --body \
+            "This PR bumps a \`soroban-*\` crate. SDK upgrades can change contract behaviour: review the SDK changelog, run the full test suite and testnet integration, and merge manually. Do not auto-merge."

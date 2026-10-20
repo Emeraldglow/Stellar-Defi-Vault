@@ -1,4 +1,7 @@
-use soroban_sdk::{contract, contractimpl, contracttype, contracterror, Address, Env};
+﻿use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env};
+
+#[cfg(feature = "vault-wasm")]
+use soroban_sdk::contractclient;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -26,10 +29,12 @@ enum NftDataKey {
     Receipt(Address),
 }
 
+#[cfg(not(feature = "vault-wasm"))]
 #[contract]
 pub struct StakeReceiptNFT;
 
-#[contractimpl]
+#[cfg(not(feature = "vault-wasm"))]
+#[cfg_attr(not(test), contractimpl)]
 impl StakeReceiptNFT {
     /// Initialize the NFT contract. `minter` is the vault contract allowed to mint/burn.
     pub fn initialize(env: Env, minter: Address) -> Result<(), NftError> {
@@ -81,16 +86,14 @@ impl StakeReceiptNFT {
         Ok(())
     }
 
-    /// Transfer always reverts — receipts are non-transferable (soulbound).
+    /// Transfer always reverts â€” receipts are non-transferable (soulbound).
     pub fn transfer(_env: Env, _from: Address, _to: Address) -> Result<(), NftError> {
         Err(NftError::NonTransferable)
     }
 
     /// Returns true if `user` currently holds a receipt.
     pub fn has_receipt(env: Env, user: Address) -> bool {
-        env.storage()
-            .persistent()
-            .has(&NftDataKey::Receipt(user))
+        env.storage().persistent().has(&NftDataKey::Receipt(user))
     }
 
     /// Returns the receipt metadata for `user`, if one exists.
@@ -101,3 +104,17 @@ impl StakeReceiptNFT {
             .ok_or(NftError::NoReceipt)
     }
 }
+
+#[cfg(feature = "vault-wasm")]
+#[contractclient(name = "StakeReceiptNFTClient")]
+pub trait StakeReceiptNFTInterface {
+    fn initialize(env: Env, minter: Address) -> Result<(), NftError>;
+    fn mint(env: Env, to: Address, pool_contract: Address, staked_amount: i128, staked_at_ledger: u32) -> Result<(), NftError>;
+    fn burn(env: Env, user: Address) -> Result<(), NftError>;
+    fn transfer(env: Env, from: Address, to: Address) -> Result<(), NftError>;
+    fn has_receipt(env: Env, user: Address) -> bool;
+    fn get_receipt(env: Env, user: Address) -> Result<Receipt, NftError>;
+}
+
+
+

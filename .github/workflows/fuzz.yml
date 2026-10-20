@@ -1,0 +1,58 @@
+name: Fuzz
+
+# Coverage-guided fuzzing (issue #661). Scheduled + on-demand rather than on
+# every PR: a bounded run is cheap enough to run daily, and a crash uploaded as
+# an artifact is enough to reproduce locally with `cargo fuzz run`.
+on:
+  schedule:
+    - cron: "0 3 * * *" # daily at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      max_total_time:
+        description: "Seconds to fuzz each target"
+        required: false
+        default: "120"
+
+env:
+  CARGO_TERM_COLOR: always
+  # Time budget per target, in seconds.
+  FUZZ_TIME: ${{ github.event.inputs.max_total_time || '120' }}
+
+jobs:
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [share_conversion, reward_calculation]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Fuzz ${{ matrix.target }} for ${{ env.FUZZ_TIME }}s
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=${{ env.FUZZ_TIME }}
+
+      - name: Upload any crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore

@@ -1,0 +1,16 @@
+# Initial conservative thresholds, based on COSTS.md estimates and known O(n) first-deposit behavior.
+# Recalibrate from the focused measurement harness before treating these as a certified mainnet budget.
+# tolerance_percent applies independently to CPU instructions and memory bytes.
+operation,depositors,cpu_instructions,memory_bytes,tolerance_percent
+deposit,1,500000,60000,10
+deposit,100,1000000,200000,10
+deposit,1000,10000000,2000000,10
+withdraw,1,500000,60000,10
+withdraw,100,500000,60000,10
+withdraw,1000,500000,60000,10
+claim,1,450000,50000,10
+claim,100,450000,50000,10
+claim,1000,450000,50000,10
+exit,1,500000,60000,10
+exit,100,500000,60000,10
+exit,1000,500000,60000,10

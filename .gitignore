@@ -2,5 +2,18 @@
 **/*.rs.bk
 *.wasm
 .env
+.watch-events-cursor.json
+.watch-events-cursor.json.tmp
+node_modules/
 .DS_Store
 test_snapshots/
+fix.md
+
+# Python tooling (CI helper scripts)
+__pycache__/
+*.pyc
+
+# Local quality-tool output
+lcov.info
+scout.sarif
+scout.md

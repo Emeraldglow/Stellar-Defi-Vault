@@ -1,0 +1,65 @@
+name: Mutation Testing
+
+# Mutation testing is expensive, so it runs on a schedule rather than on every
+# pull request (issue #662). Trigger it manually from the Actions tab when
+# changing the accounting modules.
+on:
+  schedule:
+    - cron: '0 3 * * 1' # Mondays at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  mutants:
+    name: cargo-mutants (accounting core)
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-mutants-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+
+      # `mutants.toml` scopes the run to src/balance.rs and src/invariants.rs.
+      # A non-zero exit just means survivors exist; the report is the point of
+      # the run, and triage happens against docs/MUTATION_TESTING.md.
+      - name: Run mutation testing
+        run: cargo mutants --config mutants.toml || true
+
+      - name: Summarise surviving mutants
+        if: always()
+        run: |
+          {
+            echo "### Mutation testing (accounting core)"
+            echo
+            if [ -f target/mutants/missed.txt ]; then
+              echo "Surviving mutants needing triage:"
+              echo
+              echo '```'
+              cat target/mutants/missed.txt
+              echo '```'
+            else
+              echo "No survivors file found; see the job log for details."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutants-report
+          path: target/mutants/
+          if-no-files-found: warn

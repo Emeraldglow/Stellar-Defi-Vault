@@ -11,8 +11,13 @@ fi
 
 # Load env file if it exists
 if [ -f .env ]; then
-    # Load environment variables, filtering out comments
-    export $(grep -v '^#' .env | xargs)
+    # Load environment variables. `export $(grep … | xargs)` word-split
+    # every value, breaking any value with spaces or quotes; sourcing with
+    # allexport keeps the shell's own quoting rules (#669).
+    set -a
+    # shellcheck disable=SC1091 # .env is local and optional, not in the repo
+    . ./.env
+    set +a
 fi
 
 # Ensure required variables are set

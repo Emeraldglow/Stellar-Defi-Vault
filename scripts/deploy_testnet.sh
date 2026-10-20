@@ -43,16 +43,7 @@ if [ ! -f "$WASM_PATH" ]; then
     exit 1
 fi
 
-# 4. Deploy contract
-echo "Deploying contract to $NETWORK..."
-CONTRACT_ID=$(stellar contract deploy \
-    --wasm "$WASM_PATH" \
-    --source "$IDENTITY" \
-    --network "$NETWORK")
-
-echo "Contract deployed successfully! ID: $CONTRACT_ID"
-
-# 5. Get token address
+# 4. Get token address
 # Use TOKEN_ID from env, or get native XLM wrapper if not specified
 if [ -z "${TOKEN_ID:-}" ]; then
     echo "No TOKEN_ID specified. Fetching native XLM wrapper contract ID..."
@@ -62,18 +53,17 @@ if [ -z "${TOKEN_ID:-}" ]; then
 fi
 echo "Using token address: $TOKEN_ID"
 
-# 6. Initialize contract
-echo "Initializing contract..."
-stellar contract invoke \
-    --id "$CONTRACT_ID" \
+# 5. Deploy contract with constructor arguments (atomic deploy & init, preventing front-running)
+echo "Deploying and initializing contract atomically to $NETWORK..."
+CONTRACT_ID=$(stellar contract deploy \
+    --wasm "$WASM_PATH" \
     --source "$IDENTITY" \
     --network "$NETWORK" \
     -- \
-    initialize \
     --admin "$IDENTITY_ADDRESS" \
-    --token "$TOKEN_ID"
+    --token "$TOKEN_ID")
 
-echo "Initialization complete!"
+echo "Contract deployed and initialized atomically! ID: $CONTRACT_ID"
 echo "----------------------------------------"
 echo "Vault Contract ID: $CONTRACT_ID"
 echo "Token Contract ID: $TOKEN_ID"

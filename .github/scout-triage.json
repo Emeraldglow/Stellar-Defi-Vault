@@ -1,0 +1,4 @@
+{
+  "_comment": "Scout findings triage allowlist (issue #664). Every entry suppresses one HIGH-severity finding and MUST carry a justification. CI fails on any high-severity finding not matched here. Match on ruleId plus an optional case-insensitive substring of the finding message; keep the substring as specific as possible. See docs/STATIC_ANALYSIS.md for the triage workflow.",
+  "allowed": []
+}
