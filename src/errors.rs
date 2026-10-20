@@ -801,6 +801,13 @@ pub enum VaultOpsError {
     /// Returned by `fund_reward_pool` when `amount` is below the configured
     /// minimum (issue #549). Disabled when the minimum is 0.
     FundingBelowMinimum = 13,
+    /// Returned by `recover_reward_surplus` when the computed surplus
+    /// (`reward_pool - accrued_unclaimed - runway_reserve`) is zero or
+    /// negative (issue #795).
+    NoSurplus = 14,
+    /// Returned by `withdraw_treasury` when the withdrawal would exceed the
+    /// configured rolling rate limit (issue #794).
+    TreasuryLimitExceeded = 15,
 }
 
 impl From<VaultError> for VaultOpsError {

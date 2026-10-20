@@ -352,12 +352,6 @@ impl VaultContract {
         )
     }
 
-    /// Admin: serialize the full pool state for migrating to a new contract
-    /// instance (issue #203). Both this contract and the destination should
-    /// be paused for the duration of the migration — this is a point-in-time
-    /// snapshot, not a live sync.
-    pub fn export_state(env: Env, admin_addr: Address) -> Result<MigrationExport, VaultExtError> {
-        admin::require_admin_as(&env, &admin_addr)?;
     /// Stakes `amount` of the pool's token on behalf of `user`, minting
     /// shares proportional to the current share price. The first deposit is
     /// scaled from the token's queried precision into the vault's fixed
@@ -3065,6 +3059,8 @@ impl VaultContract {
         // gate: increases are queued; decreases apply immediately.
         crate::fee_change_notice::propose_fee_change(&env, bps)?;
         Ok(())
+    }
+
     /// Take a valuation snapshot of user's staking position (callable by owner or keeper).
     pub fn take_value_snapshot(
         env: Env,
@@ -3085,7 +3081,6 @@ impl VaultContract {
     pub fn get_total_appreciation_bps(env: Env, user: Address) -> i128 {
         crate::position_value_appreciation_log::calculate_total_appreciation_bps(&env, &user)
     }
-}
 
     // ── Issue #182: stake-event webhook URL config ───────────────────────────
 
@@ -3119,7 +3114,9 @@ impl VaultContract {
         balance::clear_webhook_url(&env);
         let admin = admin::get_admin(&env)?;
         events::webhook_url_updated(&env, &admin, &None, env.ledger().sequence());
-impl VaultContract {
+        Ok(())
+    }
+
     fn validate_rate_bps(rate_bps: u32) -> Result<(), VaultError> {
         if rate_bps > balance::MAX_RATE_BPS {
             return Err(VaultError::RateTooHigh);
@@ -3241,7 +3238,20 @@ impl VaultContract {
     }
 
     fn normalize_to_reward_decimals(env: &Env, amount: i128) -> Result<i128, VaultError> {
-        Ok(amount)
+        let stake_dec = balance::get_stake_decimals(env);
+        let reward_dec = balance::get_reward_decimals(env);
+        if stake_dec == reward_dec {
+            return Ok(amount);
+        }
+        if reward_dec > stake_dec {
+            let factor = 10i128.pow(reward_dec - stake_dec);
+            amount
+                .checked_mul(factor)
+                .ok_or(VaultError::ArithmeticError)
+        } else {
+            let factor = 10i128.pow(stake_dec - reward_dec);
+            Ok(amount / factor)
+        }
     }
 
     fn require_not_paused(env: &Env) -> Result<(), VaultError> {
@@ -14736,52 +14746,8 @@ pub fn get_reward_threshold(env: Env) -> i128 {
             let mut checklist = balance::get_onboarding_checklist(&env, &user);
             checklist.has_enabled_streaming = true;
             Self::save_onboarding_checklist(&env, &user, checklist);
-        let token_addr = Self::token_address(&env)?;
-        let token_client = token::Client::new(&env, &token_addr);
-        // Send to recipient instead of user
-        token_client.transfer(&env.current_contract_address(), &recipient, &payout);
-
-        balance::set_shares(&env, &user, user_shares - shares);
-        balance::set_total_shares(&env, total_shares.checked_sub(shares).ok_or(VaultError::ArithmeticError)?);
-        balance::set_total_deposited(&env, total_deposited - amount);
-
-        if fee > 0 {
-            balance::add_protocol_fee_collected(&env, fee);
-            // Issue #704: the insurance share comes off the top of the fee.
-            let insurance_share =
-                crate::vault_extensions_701_704::take_insurance_share(&env, fee)?;
-            let distributable_fee = fee
-                .checked_sub(insurance_share)
-                .ok_or(VaultError::ArithmeticError)?;
-            let treasury_share =
-                crate::community_treasury::route_fee_revenue(&env, distributable_fee)?;
-            let remaining_fee = distributable_fee
-                .checked_sub(treasury_share)
-                .ok_or(VaultError::ArithmeticError)?;
-            
-            if let Some(split) = Self::get_treasury_split(env.clone()) {
-                let token_addr = Self::token_address(&env)?;
-                let token_client = token::Client::new(&env, &token_addr);
-                for i in 0..split.recipients.len() {
-                    let recipient = split.recipients.get(i).unwrap();
-                    let bps = split.bps_shares.get(i).unwrap();
-                    let amount = (remaining_fee * (bps as i128)) / 10000;
-                    if amount > 0 {
-                        token_client.transfer(&env.current_contract_address(), &recipient, &amount);
-                    }
-                }
-            } else {
-                let recipients = balance::get_fee_recipients(&env);
-                if !recipients.is_empty() {
-                    Self::distribute_fee(&env, &token_addr, remaining_fee, &recipients);
-                } else if balance::fee_buyback_enabled(&env) {
-                    balance::add_unstake_fee_reserve(&env, remaining_fee);
-                } else {
-                    let reward_pool = balance::get_reward_pool_balance(&env);
-                    balance::set_reward_pool_balance(&env, reward_pool + remaining_fee);
-                }
-            }
         }
+    }
 
     pub fn set_target_emission_per_ledger(
         env: Env,
@@ -14806,14 +14772,15 @@ pub fn get_reward_threshold(env: Env) -> i128 {
         Ok(())
     }
 
+    /// Stake on behalf of a user from a contract caller.
     pub fn stake_via_contract(
-        // Emit withdrawal event with both user and recipient
-        env.events().publish(
-            (symbol_short!("wd_to"), &user),
-            (&recipient, shares, amount, env.ledger().sequence()),
-        );
-
-        Ok(amount)
+        env: Env,
+        caller: Address,
+        user: Address,
+        amount: i128,
+    ) -> Result<i128, VaultError> {
+        caller.require_auth();
+        Self::stake(env, user, amount)
     }
 
     // ── Issue #536: inactivity decay configuration ────────────────────────

@@ -46,6 +46,9 @@ pub enum RoleError {
     InsufficientTreasury = 5,
     /// The underlying pause/unpause was rejected (stopped pool, re-pause cooldown).
     OperationFailed = 6,
+    /// Returned by `withdraw_treasury` when the withdrawal would exceed the
+    /// configured rolling rate limit (issue #794).
+    TreasuryLimitExceeded = 7,
 }
 
 #[derive(Copy, Clone)]
@@ -157,6 +160,8 @@ impl VaultContract {
     }
 
     /// Treasurer/admin: pay `amount` out of the community treasury balance to `to`.
+    /// Reverts with `TreasuryLimitExceeded` when the rolling rate limit would
+    /// be exceeded (issue #794).
     pub fn withdraw_treasury(
         env: Env,
         caller: Address,
@@ -170,6 +175,17 @@ impl VaultContract {
         }
         if amount > treasury {
             return Err(RoleError::InsufficientTreasury);
+        }
+        // Issue #794: enforce the rolling withdrawal rate limit.
+        let (limit, period) = crate::vault_extensions_792_795::get_treasury_limit(&env);
+        if limit > 0 {
+            let (withdrawn, _) = crate::vault_extensions_792_795::maybe_rollover_window(&env, period);
+            if withdrawn.saturating_add(amount) > limit {
+                return Err(RoleError::TreasuryLimitExceeded);
+            }
+            env.storage()
+                .instance()
+                .set(&symbol_short!("t_wd_amt"), &(withdrawn + amount));
         }
         let token_addr: Address = env
             .storage()
