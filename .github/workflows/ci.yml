@@ -234,6 +234,34 @@ jobs:
           path: lcov.info
           if-no-files-found: warn
 
+  # Public-interface snapshot (see docs/INTERFACE_SPEC.md). Regenerates the
+  # contract's interface from the real release build and fails the build if
+  # it drifted from the committed interface-spec/VaultContract.json, so a
+  # breaking (or any) change to the public ABI is always a deliberate,
+  # reviewed diff rather than an accident that ships silently.
+  interface-spec:
+    name: Interface Spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache cargo registry and stellar-cli
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/stellar
+          key: ${{ runner.os }}-stellar-cli-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install Stellar CLI
+        run: command -v stellar >/dev/null 2>&1 || cargo install --locked stellar-cli
+      - name: Check interface spec against the committed snapshot
+        run: |
+          chmod +x scripts/interface_spec.sh
+          ./scripts/interface_spec.sh
+
   # Scout static analysis on every PR (issue #664). Fails on any high-severity
   # finding that is not triaged in .github/scout-triage.json.
   scout:

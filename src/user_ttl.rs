@@ -33,22 +33,23 @@
 //! # Restoring an archived entry
 //! If nobody bumps a dormant user before their TTL fully elapses, Soroban
 //! archives their persistent entries. A returning user is not locked out,
-//! but the recovery path depends on how they re-engage:
-//! - Calling `stake()` again always works: it only ever *writes* those keys
-//!   (`ShareBalance`, `StakedAtLedger`, etc.), and a write to an archived
-//!   persistent key recreates it from scratch at the current TTL.
-//! - Calling a read-then-write entrypoint such as `claim()` or `withdraw()`
-//!   on an archived entry fails the transaction, because Soroban requires
-//!   archived ledger entries to be restored *before* the transaction that
-//!   touches them. The caller (the user, or anyone acting on their behalf)
-//!   must first submit a restore-footprint transaction — via
-//!   `RestoreFootprintTransactionData` through the Stellar RPC/CLI (e.g.
-//!   `soroban contract restore` in the CLI) — naming the archived ledger
-//!   keys for that address (position, checkpoint, and settings entries, as
-//!   listed above). Once restored, the normal entrypoint call succeeds.
-//! - `bump_user_entries` called regularly (e.g. by a keeper bot sweeping
-//!   `AllStakers`) is the cheap alternative to ever reaching that state, and
-//!   is the recommended default for keeping dormant positions alive.
+//! but — contrary to what might seem intuitive — a plain write does
+//! **not** self-heal an archived key: Soroban checks an entry's liveness
+//! on *every* access, including a write to a key that already exists
+//! (just with a stale, past-due TTL), so even calling `stake()` again
+//! fails exactly like a read would, not just `claim()`/`withdraw()`.
+//! Every entrypoint touching an archived entry fails until it is
+//! explicitly restored first, because Soroban requires archived ledger
+//! entries to be restored *before* the transaction that touches them —
+//! the caller (the user, or anyone acting on their behalf) must submit a
+//! restore-footprint transaction via the Stellar RPC/CLI (`stellar
+//! contract restore`) naming the archived ledger keys for that address
+//! (position, checkpoint, and settings entries, as listed above). See
+//! `docs/RESTORE.md` for the exact CLI steps. Once restored, the normal
+//! entrypoint call succeeds again, with its prior value intact.
+//! `bump_user_entries` called regularly (e.g. by a keeper bot sweeping
+//! `AllStakers`) is the cheap alternative to ever reaching that state, and
+//! is the recommended default for keeping dormant positions alive.
 
 use soroban_sdk::{contracterror, contractimpl, symbol_short, Address, Env, Symbol};
 

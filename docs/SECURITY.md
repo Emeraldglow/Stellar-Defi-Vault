@@ -232,7 +232,85 @@ This is a single-step, irreversible operation. The current admin loses authority
 
 ## Audit Status
 
-This contract is unaudited. Do not use in production without an independent security audit. If you discover a vulnerability, please open a private [GitHub Security Advisory](../../security/advisories/new) rather than a public issue.
+This contract is unaudited. Do not use in production without an independent security audit. If you discover a vulnerability, please report it privately as described below rather than opening a public issue.
+
+## Vulnerability Disclosure Policy
+
+### Reporting a vulnerability
+
+**Do not open a public GitHub issue or pull request for a security vulnerability.** Report it privately instead:
+
+1. **GitHub Security Advisories (preferred):** open a private advisory at [`../../security/advisories/new`](../../security/advisories/new). This reaches maintainers directly without disclosing anything publicly, and lets you collaborate privately on a fix before it's published. It does not require a GitHub account to have any special access beyond being signed in.
+2. **Email:** no dedicated security mailbox is configured for this project yet. Until one is, GitHub Security Advisories is the only private channel this policy can point to — maintainers should add a monitored `security@` alias here once one exists, rather than researchers needing to guess at one.
+
+Please include, at minimum:
+
+- the affected contract function(s) or file(s),
+- a description of the vulnerability and its impact,
+- steps to reproduce, ideally a minimal proof-of-concept transaction or test,
+- the commit hash or tag you tested against.
+
+### Response SLA
+
+| Stage | Target |
+| --- | --- |
+| Acknowledgment of report | 3 business days |
+| Initial severity assessment | 7 business days |
+| Status update cadence while a report stays open | Every 14 days until resolved |
+| Fix or mitigation for a Critical finding | Best-effort, prioritized over other work |
+
+These are targets, not contractual guarantees. This is an unaudited, community-maintained project (see "Audit Status" above), not a funded security program with dedicated on-call staff — a researcher should factor that into their own disclosure timeline expectations.
+
+### Scope
+
+**In scope:**
+
+- `src/vault.rs` and every module it wires into `VaultContract`'s entrypoint surface, as built from the `main` branch.
+- The accounting invariants and admin-power boundaries documented elsewhere in this file (see "Admin-Only Functions," "What Admin Cannot Do," and "Failure Scenarios" above).
+- Build and CI configuration that affects what actually gets deployed (`Cargo.toml`, `deny.toml`, the workflows under `.github/workflows/`).
+
+**Out of scope:**
+
+- Behavior already documented here as an intentional trust assumption. The admin's documented powers under "Admin-Only Functions" and "Failure Scenarios" above are known, accepted design, not vulnerabilities — unless your report shows the admin (or anyone else) can do something **beyond** what's documented, e.g. access user principal, which "What Admin Cannot Do" explicitly states is impossible.
+- Third-party dependency vulnerabilities already covered by "Dependency Advisory Triage" below — report those through the usual RustSec/advisory-database channels, not here, unless you have evidence this project is exploitable through one of them *right now*, with a concrete path.
+- Denial-of-service findings that require resources beyond what Soroban's own fee/resource-limit model already bounds (see [docs/RESOURCE_LIMITS.md](./RESOURCE_LIMITS.md)) — report only if you can show a specific limit is missing or bypassable, not "an attacker could spend a lot of their own fees."
+- Social engineering, physical access to a maintainer's or user's device, or attacks on infrastructure this project doesn't control (GitHub itself, a wallet provider, an RPC provider).
+- Issues present only on unreleased, experimental, or clearly work-in-progress branches that haven't merged to `main`.
+- Reports with no demonstrated security impact (style preferences, missing comments, lint suggestions) — open those as an ordinary public issue instead.
+
+### Severity levels
+
+| Severity | Definition | Example |
+| --- | --- | --- |
+| **Critical** | Direct theft, loss, or permanent freezing of user principal or rewards; unauthorized minting of shares; a bypass of a documented admin-power boundary. | An unprivileged caller can withdraw another user's shares. |
+| **High** | Significant but bounded fund-safety impact, or a way to force the contract into a state that only an irreversible admin action (or nothing) can recover from. | An attacker can drain the reward pool faster than the configured rate via a rounding exploit. |
+| **Medium** | Incorrect accounting, event, or access-control behavior with limited blast radius, or a documented invariant violation that doesn't directly move funds. | A fee is miscalculated in an edge case, over- or under-charging by a small, bounded amount. |
+| **Low** | Minor correctness issues, gas/resource inefficiencies, or hardening suggestions with no practical exploit path. | A getter returns a slightly stale value under a rare, non-adversarial timing window. |
+
+### Rewards
+
+This project does not currently operate a funded bug bounty program. It is unaudited and community-maintained, with no treasury allocated for rewards (see "Audit Status" above). **No monetary reward is guaranteed for any report, regardless of severity.**
+
+What a reporter can expect instead:
+
+- Public credit in the fix's commit message and release notes, unless you ask to stay anonymous.
+- Priority review and direct maintainer engagement on Critical/High findings.
+- If a funded bounty program is introduced later, the severity levels above are the intended basis for its reward tiers — this document will be updated with concrete ranges at that point, not before, so nothing here should be read as a promise of a specific amount.
+
+### Safe harbor
+
+We will not pursue or support legal action against a researcher who:
+
+- makes a good-faith effort to avoid privacy violations, data destruction, and service disruption,
+- only interacts with test networks (Testnet/Futurenet) or their own funds and accounts on mainnet — never another user's funds, data, or account without explicit permission,
+- reports through one of the private channels above and gives us a reasonable opportunity to investigate and remediate before any public disclosure,
+- does not exploit a finding beyond what's needed to demonstrate it (e.g. proves a withdrawal exploit with a trivial amount, rather than draining the pool).
+
+We consider activity consistent with this policy to be authorized for the purpose of any applicable computer-misuse laws, and we will not initiate legal action against a researcher for work that stays within it. This safe harbor does not extend to third parties, and does not cover actions outside the bullets above.
+
+### Coordinated disclosure
+
+Once a reported vulnerability is fixed, or a maintainer determines no fix is needed, we aim to publish a GitHub Security Advisory describing the issue and crediting the reporter (unless anonymity was requested) within 7 days of the fix landing. We ask reporters not to disclose details publicly before that advisory is published, or before 90 days have passed since the initial report, whichever comes first.
 
 ## Dependency Advisory Triage
 

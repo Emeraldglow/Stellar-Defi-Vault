@@ -1,5 +1,22 @@
 use soroban_sdk::contracterror;
 
+/// # Policy: error codes are never reused
+///
+/// Every variant's numeric discriminant is part of this contract's public
+/// ABI — callers match on that number, not the Rust variant name. Once a
+/// number is assigned to a shipped variant, it must never be reassigned,
+/// renumbered, or freed for reuse by deleting the variant, even if the
+/// variant is later deprecated. New cases get the next unused number;
+/// `VaultError` is already at Soroban's 50-variant cap (see the comment
+/// above `VaultExtError` below), so anything new goes into one of the
+/// satellite enums instead. `DepositorCapReached = 27` is the one
+/// documented exception, and only because it reuses a slot that was
+/// planned but never actually shipped under a different meaning — see
+/// its own doc comment.
+///
+/// Enforced by `src/test_error_codes.rs`'s snapshot test: it fails if any
+/// existing code here is renumbered or deleted, and fails to *compile* if
+/// a new variant is added without also being added to that file.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]

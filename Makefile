@@ -1,4 +1,4 @@
-.PHONY: build test docs coverage coverage-lcov scout scout-sarif mutants deploy-testnet stake claim wasm-release fuzz-check fuzz-build fuzz
+.PHONY: build test docs coverage coverage-lcov scout scout-sarif mutants deploy-testnet stake claim wasm-release fuzz-check fuzz-build fuzz interface-spec interface-spec-check
 
 build:
 	cargo build --target wasm32-unknown-unknown --release
@@ -52,6 +52,20 @@ stake:
 claim:
 	chmod +x scripts/claim.sh
 	./scripts/claim.sh
+
+# ── Public interface snapshot. See docs/INTERFACE_SPEC.md ──────────────────
+
+# Check the committed snapshot (interface-spec/VaultContract.json) against
+# a fresh build; fails with a diff if the public interface changed.
+interface-spec-check:
+	@chmod +x scripts/interface_spec.sh
+	./scripts/interface_spec.sh
+
+# Regenerate the committed snapshot from a fresh build. Review the diff,
+# commit the result, and add a CHANGELOG.md entry for intentional changes.
+interface-spec:
+	@chmod +x scripts/interface_spec.sh
+	./scripts/interface_spec.sh --update
 
 # ── Fuzzing (issue #661). See fuzz/README.md ────────────────────────────────
 

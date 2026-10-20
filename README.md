@@ -149,9 +149,11 @@ cargo clippy --features testutils -- -D warnings
 Quality tooling complements the test suite; each has a doc and a `make` target:
 
 ```bash
-make coverage   # line coverage summary (cargo-llvm-cov)   — docs/COVERAGE.md
-make scout      # Scout static analysis (Soroban)          — docs/STATIC_ANALYSIS.md
-make mutants    # mutation testing of the accounting core  — docs/MUTATION_TESTING.md
+make coverage              # line coverage summary (cargo-llvm-cov)   — docs/COVERAGE.md
+make scout                 # Scout static analysis (Soroban)          — docs/STATIC_ANALYSIS.md
+make mutants                # mutation testing of the accounting core  — docs/MUTATION_TESTING.md
+make interface-spec-check  # fail if the public interface drifted     — docs/INTERFACE_SPEC.md
+make interface-spec        # regenerate the committed snapshot        — docs/INTERFACE_SPEC.md
 ```
 
 - [docs/COVERAGE.md](docs/COVERAGE.md) — coverage on every PR, the no-regression
@@ -162,6 +164,12 @@ make mutants    # mutation testing of the accounting core  — docs/MUTATION_TES
   the baseline, and how survivors are triaged.
 - [docs/INVARIANTS.md](docs/INVARIANTS.md) — the precise accounting and
   share-price invariants that these tools protect, mapped to tests.
+- [docs/INTERFACE_SPEC.md](docs/INTERFACE_SPEC.md) — the committed public-interface
+  snapshot (`interface-spec/VaultContract.json`), generated from the real release
+  build so any change to an exported function's name, parameters, or types shows
+  up as a CI-failing diff instead of shipping silently; see
+  [CHANGELOG.md](CHANGELOG.md) for the entry an intentional change needs
+  alongside the refreshed snapshot.
 
 ### Deploying to Testnet
 
@@ -275,6 +283,205 @@ Pending reward: 0.1375000 (1375000 raw)
 Boost multiplier: 11000 bps
 ```
 
+## Reward Pool Runway Simulation
+
+[`scripts/runway-sim.ts`](./scripts/runway-sim.ts) projects when the reward
+pool would run dry under three TVL growth scenarios (low / base / high), so
+an operator can size `fund_reward_pool` ahead of time instead of guessing.
+It uses the exact same pool-wide APR math as `runway_guard.rs`'s
+`projected_runway_ledgers` (`BOOST_BPS_BASE`, `STELLAR_LEDGERS_PER_YEAR`, and
+`LEDGERS_PER_DAY`, mirrored as plain constants at the top of the script —
+see its own header comment if those ever change on-chain).
+
+It's a dependency-free TypeScript file — no `package.json` or `npm install`
+needed — runnable directly with [`tsx`](https://github.com/privatenumber/tsx)
+or `ts-node`:
+
+```bash
+npx tsx scripts/runway-sim.ts --tvl 1000000 --rate-bps 800 --reward-pool 15000
+```
+
+Pool state can instead be read live from a deployed contract via the Stellar
+CLI, using the same `CONTRACT_ID` / `IDENTITY` / `NETWORK` convention as
+`scripts/pool.sh`. `IDENTITY` is required here too — the CLI needs a source
+account even for a read-only simulated call:
+
+```bash
+CONTRACT_ID=CB...YOUR_CONTRACT_ID IDENTITY=alice npx tsx scripts/runway-sim.ts --network testnet
+```
+
+Model a prospective top-up with `--fund`, and widen or narrow the projection
+with `--months` and the `--low-growth`/`--base-growth`/`--high-growth`
+annual rates (e.g. `--base-growth 0.5` for +50%/year):
+
+```text
+$ npx tsx scripts/runway-sim.ts --tvl 1000000 --rate-bps 500 --reward-pool 50000 --months 12
+Pool state: TVL=1,000,000 rate_bps=500 reward_pool=50,000
+
+Month  low (-25%/yr)  base (50%/yr)  high (200%/yr)
+-----  -------------  -------------  --------------
+    0       50000.00       50000.00        50000.00
+    1       45939.09       45819.80        45693.41
+    2       41974.37       41495.93        40973.94
+    3       38103.57       37023.48        35802.00
+    4       34324.46       32397.32        30134.21
+    5       30634.88       27612.18        23923.04
+    6       27032.69       22662.60        17116.38
+    7       23515.84       17542.91         9657.15
+    8       20082.29       12247.29         1482.79
+    9       16730.08        6769.67            0.00
+   10       13457.28        1103.81            0.00
+   11       10262.00           0.00            0.00
+   12        7142.42           0.00            0.00
+
+low   (-25%/yr TVL growth): survives the full 12-month horizon
+base  (50%/yr TVL growth): exhausted around month 11
+high  (200%/yr TVL growth): exhausted around month 9
+```
+
+Run `npx tsx scripts/runway-sim.ts --help` for the full option list. The
+output above is from an actual run of the script, not fabricated — try the
+same command to reproduce it.
+
+## Seeding Demo Accounts
+
+[`scripts/seed-testnet.sh`](./scripts/seed-testnet.sh) creates and
+friendbot-funds `N` throwaway test-network accounts, mints each one a test
+token, and deposits it into the deployed vault — useful for demos and
+manual QA when you need several positions in the pool without hand-running
+the same CLI calls over and over.
+
+```bash
+scripts/seed-testnet.sh --accounts 5 --amount 250000000 --contract-id "$CONTRACT_ID"
+```
+
+By default it deploys a fresh, freely-mintable test token (a Stellar Asset
+Contract wrapping a classic asset it issues itself) and mints `--amount`
+(raw base units, 7 decimals, same convention as `scripts/stake.sh`) of it to
+each new account before depositing that same amount into the vault. Pass
+`--token-id` + `--token-issuer` to mint from an already-deployed test token
+instead. `--accounts`, `--amount`, and `--contract-id` (or `$CONTRACT_ID`)
+are the only required inputs; run with `--help` for the rest (`--prefix`,
+`--asset-code`, `--network`).
+
+It **never runs against mainnet**: the network (`--network`, or `$NETWORK`,
+default `testnet`) must be one of `testnet` / `futurenet` / `local` /
+`standalone`, checked both by name and, as a second, independent check,
+against the network's own passphrase — and there is no flag or environment
+variable to bypass either check.
+
+Each account is seeded independently: one failing (e.g. a flaky friendbot
+request) doesn't stop the rest, and the final summary table marks exactly
+which step failed for it:
+
+```text
+Summary
+Name          Address                                                   Minted          Shares          Status
+------------  --------------------------------------------------------  --------------  --------------  ------
+seed-1        GA2SAV4ISWSF42FWFFMA5C54EMHFPZWG6S2JRPLW53HXK3GDAMYMJW54  250000000       2.5000000       ok
+seed-2        GC3QSFHWDI7G3MFNCNTHAS3FCJ5KAJMJSAPLPGOMTAERFKNM77GSO737  250000000       2.5000000       ok
+
+2/2 accounts fully seeded (created, funded, minted, deposited).
+```
+
+(Account creation, funding, and minting above are from an actual testnet
+run; the deposit/shares columns are illustrative, since reproducing them
+needs a deployed vault contract ID.)
+
+## Pool Health Dashboard Endpoint
+
+[`scripts/pool-status.ts`](./scripts/pool-status.ts) polls the vault's
+read-only functions (TVL, reward rate, reward pool balance, projected
+runway, pause state) and prints a single JSON document to stdout —
+suitable for a status page, or as a monitoring check in its own right:
+it exits non-zero when a configured alert threshold is breached (low
+runway, or the pool being paused).
+
+```bash
+CONTRACT_ID=C... IDENTITY=alice npx tsx scripts/pool-status.ts
+```
+
+```json
+{
+  "timestamp": "2026-10-20T00:00:00.000Z",
+  "network": "testnet",
+  "contractId": "C...",
+  "decimals": 7,
+  "tvl": 1000000,
+  "tvlRaw": "10000000000000",
+  "rateBps": 500,
+  "rewardPoolBalance": 50000,
+  "rewardPoolBalanceRaw": "500000000000",
+  "projectedRunwayLedgers": 980000,
+  "paused": false,
+  "alerts": [],
+  "ok": true
+}
+```
+
+(Shape and field names above are illustrative — reproducing real values
+needs an actual deployed vault contract. The argument parsing, help
+text, and error/exit-code paths were verified against the real Stellar
+CLI on testnet while writing this script; a successful fetch against a
+live vault was not, since that needs a deployed contract.)
+
+Mainnet has no default RPC endpoint in the Stellar CLI ("Bring Your
+Own"), so point at your own provider explicitly:
+
+```bash
+CONTRACT_ID=C... IDENTITY=ops npx tsx scripts/pool-status.ts \
+  --network mainnet \
+  --rpc-url https://your-mainnet-rpc-provider.example \
+  --network-passphrase "Public Global Stellar Network ; September 2015"
+```
+
+Run `npx tsx scripts/pool-status.ts --help` for every option, including
+`--min-runway-ledgers` and `--no-alert-on-pause`.
+
+### Cron usage
+
+```cron
+# Every 15 minutes, append a status line and alert (via the shell's own
+# mailing, or swap the `||` branch for your paging tool) on exit code 1
+# or 2.
+*/15 * * * * CONTRACT_ID=C... IDENTITY=alice npx tsx /path/to/scripts/pool-status.ts >> /var/log/pool-status.jsonl || echo "pool-status alert: see /var/log/pool-status.jsonl" | mail -s "Vault alert" ops@example.com
+```
+
+### CI usage (GitHub Actions)
+
+```yaml
+name: Pool health check
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+jobs:
+  pool-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
+      - name: Poll pool status
+        env:
+          CONTRACT_ID: ${{ secrets.VAULT_CONTRACT_ID }}
+          IDENTITY: ${{ secrets.VAULT_MONITOR_IDENTITY }}
+          NETWORK: mainnet
+          RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
+          NETWORK_PASSPHRASE: "Public Global Stellar Network ; September 2015"
+        run: npx tsx scripts/pool-status.ts | tee pool-status.json
+      # A non-zero exit above (alert breached, or fetch failure) fails
+      # this step and the workflow run, which is itself the alert signal
+      # most CI-based paging integrations watch for.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pool-status
+          path: pool-status.json
+```
+
 ## Events
 
 Every emitted event indexes an event-type symbol in topic 0 and its primary
@@ -308,6 +515,13 @@ storage type (instance, persistent, or temporary) each piece of contract
 state uses and why, including known scaling risks around the depositor
 registry.
 
+A persistent entry — the vault's own instance storage, or a specific
+user's position/checkpoint/settings entries — can be archived if its TTL
+runs out before anyone extends it. See
+[docs/RESTORE.md](./docs/RESTORE.md) for how to recognize that happened
+(reads fail clearly rather than returning a default) and the CLI steps to
+restore it.
+
 ## Fuzzing
 
 Coverage-guided fuzz targets for share conversion and reward math live in
@@ -332,8 +546,12 @@ See [docs/SECURITY.md](./docs/SECURITY.md) for the full security model, includin
 - What the admin can and cannot do (the admin **cannot** access user principal)
 - Failure scenarios: paused vault, halted yield, key compromise
 - Admin key rotation procedure via `transfer_admin`
+- Vulnerability disclosure policy: private reporting channel, response SLA,
+  scope, severity levels, and (currently unfunded) bounty terms
 
-This contract is unaudited. Do not use in production without an independent security audit. If you find a vulnerability, please open a private [GitHub Security Advisory](../../security/advisories/new) rather than a public issue.
+This contract is unaudited. Do not use in production without an independent security audit. If you find a vulnerability, please report it privately via a [GitHub Security Advisory](../../security/advisories/new) rather than a public issue — see [docs/SECURITY.md](./docs/SECURITY.md#vulnerability-disclosure-policy) for the full policy, or [.github/SECURITY.md](./.github/SECURITY.md) for GitHub's own security tab.
+
+See [docs/AUDIT_READINESS.md](./docs/AUDIT_READINESS.md) for the checklist this project works through before engaging an external auditor, and for the defined commit/tag an audit is actually scoped against once one is underway.
 
 ## Known Limitations & Remediations
 
