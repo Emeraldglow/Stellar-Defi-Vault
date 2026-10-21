@@ -166,3 +166,11 @@ mod test_resource_costs;
 
 #[cfg(test)]
 mod test_runbook_interface_snapshot;
+
+// ── Issue #770: upgrade test using previously-released WASM ────────────────
+#[cfg(test)]
+mod test_issues_770_upgrade;
+
+// ── Issue #769: differential tests with reference math models ──────────────
+#[cfg(test)]
+mod test_issues_769_differential;
