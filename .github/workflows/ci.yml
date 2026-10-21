@@ -10,26 +10,53 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Issue #773: run the suite on both the pinned toolchain (required to
+  # pass) and current stable (allowed to fail — this is how we spot
+  # upcoming toolchain breakage before it's forced on us). `fail-fast:
+  # false` so a stable-only failure never hides a pinned-toolchain result,
+  # and `continue-on-error` on the stable leg keeps it from blocking merges
+  # while still showing up (as a yellow warning, not a hard failure) in the
+  # checks list and in this job's own summary step.
   test:
-    name: Build & Test
+    name: Build & Test (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.allow-failure }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - toolchain: "1.94.0"
+            allow-failure: false
+          - toolchain: "stable"
+            allow-failure: true
     steps:
       - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.94.0
+        uses: dtolnay/rust-toolchain@${{ matrix.toolchain }}
 
-      - name: Cache cargo registry
-        uses: actions/cache@v6
+      # Swatinem/rust-cache keys on the toolchain + Cargo.lock automatically
+      # and understands which parts of `target/` are safe to persist between
+      # runs, so it invalidates less aggressively than a hand-rolled
+      # actions/cache key over the whole `target` directory.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          prefix-key: "ci-test"
+          key: ${{ matrix.toolchain }}
 
       - name: Run tests
+        id: run_tests
         run: cargo test --features testutils
+
+      - name: Report toolchain result
+        if: always()
+        run: |
+          status="${{ steps.run_tests.outcome }}"
+          {
+            echo "### Toolchain: ${{ matrix.toolchain }} (required: ${{ matrix.allow-failure == false }})"
+            echo "Result: ${status}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   wasm:
     name: WASM Build

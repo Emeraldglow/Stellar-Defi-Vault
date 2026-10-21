@@ -253,3 +253,48 @@ cargo test --features testutils -- --nocapture
 - [ ] New logic is covered by tests
 - [ ] PR description references the issue (`Closes #N`)
 - [ ] Doc comments added for all new public functions
+
+---
+
+## 9. Continuous Integration
+
+### Toolchain matrix
+
+The `test` job in `.github/workflows/ci.yml` runs on two toolchains:
+
+- The pinned toolchain in `rust-toolchain.toml` (currently `1.94.0`) —
+  **required**. A failure here blocks merge.
+- Current `stable` — **allowed to fail**
+  (`continue-on-error: true` on that matrix leg). It still runs and still
+  reports a result (as a warning rather than a hard failure in the checks
+  list, plus its own line in the job summary), so upcoming breakage on
+  stable is visible before the next time the pin is bumped, without
+  blocking unrelated PRs in the meantime.
+
+If the `stable` leg starts failing, open an issue noting what broke; don't
+silently ignore it just because it's non-blocking.
+
+### Dependency caching
+
+The `test` job uses [`Swatinem/rust-cache`](https://github.com/Swatinem/rust-cache)
+rather than a hand-rolled `actions/cache` key, because it understands which
+parts of `target/` are safe to carry between runs and keys itself on the
+toolchain and `Cargo.lock` automatically. Other jobs in `ci.yml` (coverage,
+interface-spec) still use a plain `actions/cache` keyed on `Cargo.lock`
+pending a similar migration.
+
+### Measuring CI time
+
+To compare median CI duration before/after a workflow change:
+
+```bash
+# Requires `gh auth login` once.
+gh run list --workflow=ci.yml --branch=main --limit=20 --json durationS,createdAt
+```
+
+Sort the `durationS` values and take the median. When changing `ci.yml` in
+a way intended to affect CI speed (like this toolchain-matrix/caching
+change), record the before/after median in the PR description — that
+history lives in the PR, not in this file, since the numbers drift with
+unrelated infrastructure changes (runner changes, dependency growth, etc.)
+and a stale number committed here would be actively misleading.
