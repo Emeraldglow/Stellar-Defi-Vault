@@ -1,10 +1,23 @@
 # Changelog
 
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-This project does not yet follow semantic versioning releases; entries are
-grouped under **Unreleased** until a tagging/release process is defined
-(see [docs/AUDIT_READINESS.md](./docs/AUDIT_READINESS.md) for the related
-commit/tag-freeze process ahead of an external audit).
+Entries are grouped under **Unreleased** until they are cut into a release.
+See [docs/RELEASING.md](./docs/RELEASING.md) for the release process
+(tagging, the CI build, and its signed build-provenance attestation) — see
+[docs/AUDIT_READINESS.md](./docs/AUDIT_READINESS.md) instead for the
+separate commit/tag-freeze process ahead of an external audit.
+
+When `Unreleased` entries are cut into a release, they move under a new
+`## vX.Y.Z — YYYY-MM-DD` heading, which must record the released Wasm's
+SHA-256 (see docs/RELEASING.md § Cutting a release):
+
+```markdown
+## vX.Y.Z — YYYY-MM-DD
+- Wasm SHA-256: `<sha256 of the release build>`
+
+### <function or area name>
+...
+```
 
 ## Why this file exists
 

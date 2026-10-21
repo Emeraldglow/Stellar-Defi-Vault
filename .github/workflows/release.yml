@@ -1,0 +1,107 @@
+name: Release
+
+# Issue #774: publish a signed build-provenance attestation alongside every
+# released Wasm, so anyone can verify it was built from a specific commit by
+# this workflow rather than hand-assembled and uploaded.
+#
+# Triggered by pushing an annotated version tag (`vX.Y.Z`). See
+# docs/RELEASING.md for the full release process, including how to verify
+# the attestation after a release is published.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (must already exist)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  WASM_PATH: target/wasm32-unknown-unknown/release/stellar_defi_vault.wasm
+
+jobs:
+  build-and-attest:
+    name: Build release Wasm and attest provenance
+    runs-on: ubuntu-latest
+    # Needed by actions/attest-build-provenance to mint a Sigstore signature
+    # over OIDC and write the attestation to this repo's attestation store.
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-release-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      # Matches the "release WASM without testutils" build in ci.yml (issue
+      # #658): the released artifact must not default-enable testutils or
+      # carry any test-only symbols.
+      - name: Build release Wasm
+        run: cargo build --target wasm32-unknown-unknown --release --no-default-features
+
+      - name: Compute SHA-256
+        id: sha256
+        run: |
+          set -euo pipefail
+          hash=$(sha256sum "${WASM_PATH}" | awk '{print $1}')
+          echo "hash=${hash}" >> "$GITHUB_OUTPUT"
+          echo "${hash}  $(basename "${WASM_PATH}")" > stellar_defi_vault.wasm.sha256
+          echo "### Release Wasm" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA-256: \`${hash}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Generates a signed SLSA build-provenance attestation binding this
+      # exact Wasm file to the workflow run, the triggering commit, and the
+      # repo it ran in. The attestation is uploaded to the repo's
+      # attestations list (visible under the repo's "Attestations" tab) and
+      # also written locally for attaching to the release.
+      - name: Generate build provenance attestation
+        id: attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ env.WASM_PATH }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          notes="Automated release build.
+
+          - Wasm SHA-256: \`${{ steps.sha256.outputs.hash }}\`
+          - Build provenance attestation: ${{ steps.attest.outputs.attestation-url }}
+
+          Verify with:
+          \`\`\`
+          gh attestation verify ${{ env.WASM_PATH }} --repo ${{ github.repository }}
+          \`\`\`
+          See docs/RELEASING.md for the full verification walkthrough."
+
+          gh release create "${tag}" \
+            "${WASM_PATH}#stellar_defi_vault.wasm" \
+            "stellar_defi_vault.wasm.sha256" \
+            --title "${tag}" \
+            --notes "${notes}" \
+            --generate-notes
